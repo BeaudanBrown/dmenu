@@ -1,0 +1,5 @@
+config.h
+dmenu
+dmenu_run
+stest
+*.o
