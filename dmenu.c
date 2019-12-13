@@ -60,9 +60,6 @@ static Clr *scheme[SchemeLast];
 
 #include "config.h"
 
-static int (*fstrncmp)(const char *, const char *, size_t) = strncmp;
-static char *(*fstrstr)(const char *, const char *) = strstr;
-
 static void
 appenditem(struct item *item, struct item **list, struct item **last)
 {
@@ -126,6 +123,9 @@ cistrstr(const char *s, const char *sub)
 			return (char *)s;
 	return NULL;
 }
+
+static int (*fstrncmp)(const char *, const char *, size_t) = strncasecmp;
+static char *(*fstrstr)(const char *, const char *) = cistrstr;
 
 static int
 drawitem(struct item *item, int x, int y, int w)
@@ -734,7 +734,7 @@ setup(void)
 					break;
 
 		if (centered) {
-			mw = MIN(MAX(max_textw() + promptw, (dmw>0 ? dmw : 100)), info[i].width);
+			mw = MIN(MAX(max_textw() + promptw, (dmw>0 ? dmw : 500)), info[i].width);
 			x = info[i].x_org + ((info[i].width  - mw) / 2);
 			y = info[i].y_org + ((info[i].height - mh) / 2);
 		} else {
@@ -822,6 +822,7 @@ main(int argc, char *argv[])
 		else if (!strcmp(argv[i], "-c"))   /* centers dmenu on screen */
 			centered = 1;
 		else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
+			// NOTE: This is the default now
 			fstrncmp = strncasecmp;
 			fstrstr = cistrstr;
 		} else if (i + 1 == argc)
