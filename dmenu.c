@@ -821,7 +821,12 @@ main(int argc, char *argv[])
 			fuzzy = 0;
 		else if (!strcmp(argv[i], "-c"))   /* centers dmenu on screen */
 			centered = 1;
-		else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
+		else if (!strcmp(argv[i], "-u")) { /* use urgent colours */
+		/* selected background color */
+			colors[SchemeSel][ColBg] = "#a54242";
+		/* selected foreground color */
+			colors[SchemeSel][ColFg] = "#282a2e";
+		} else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
 			// NOTE: This is the default now
 			fstrncmp = strncasecmp;
 			fstrstr = cistrstr;
