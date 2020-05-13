@@ -7,6 +7,9 @@
 
 #include "drw.h"
 #include "util.h"
+#include "stackblur.h"
+#include "stacktint.h"
+#include "config.h"
 
 #define UTF_INVALID 0xFFFD
 #define UTF_SIZ     4
@@ -236,19 +239,64 @@ drw_setscheme(Drw *drw, Clr *scm)
 }
 
 void
-drw_rect(Drw *drw, int x, int y, unsigned int w, unsigned int h, int filled, int invert)
+drw_blurimage (XImage *image, int radius, unsigned int cpu_threads)
 {
+	stackblur(
+		image,
+		0,
+		0,
+		image->width,
+		image->height,
+		radius,
+		cpu_threads
+	);
+}
+
+void
+drw_fillrect(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned long tint, unsigned int num_threads)
+{
+	XImage *image = malloc(sizeof(XImage));
+	memcpy(image,drw->screenshot,sizeof(XImage));
+	unsigned long bytes2copy=sizeof(char)*drw->screenshot->bytes_per_line*drw->screenshot->height;
+	image->data=malloc(bytes2copy);
+	memcpy(image->data,drw->screenshot->data,bytes2copy);
+	unsigned char *t = malloc(3 * sizeof(char));
+	t[0] = tint & 0xff;
+	t[1] = (tint >> 8) & 0xff;
+	t[2] = (tint >> 16) & 0xff;
+	stacktint(image, t, num_threads);
+
+	XPutImage(drw->dpy, drw->drawable, drw->gc, image, x, y, x, y, w, h);
+	XFlush(drw->dpy);
+	free(image);
+}
+
+void
+drw_rect(Drw *drw, int x, int y, unsigned int w, unsigned int h, int filled, int invert, unsigned int num_threads)
+{
+	unsigned long pix;
 	if (!drw || !drw->scheme)
 		return;
-	XSetForeground(drw->dpy, drw->gc, invert ? drw->scheme[ColBg].pixel : drw->scheme[ColFg].pixel);
-	if (filled)
-		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
-	else
+	/* XSetForeground(drw->dpy, drw->gc, invert ? drw->scheme[ColBg].pixel : drw->scheme[ColFg].pixel); */
+	pix = invert ? drw->scheme[ColBg].pixel : drw->scheme[ColFg].pixel;
+	if (filled) {
+		drw_fillrect(drw, x, y, w + 1, h + 1, pix, num_threads);
+		/* XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h); */
+	} else {
+		XSetForeground(drw->dpy, drw->gc, pix);
 		XDrawRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w - 1, h - 1);
+	}
+}
+
+void
+drw_takesblurcreenshot(Drw *drw, int x, int y, unsigned int w, unsigned int h, int blurlevel, unsigned int num_threads)
+{
+    drw->screenshot = XGetImage(drw->dpy,drw->root, x, y, w, h, AllPlanes, ZPixmap);
+    drw_blurimage(drw->screenshot, blurlevel, num_threads);
 }
 
 int
-drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lpad, const char *text, int invert)
+drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lpad, const char *text, int invert, unsigned int num_threads)
 {
 	char buf[1024];
 	int ty;
@@ -271,11 +319,26 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
 	if (!render) {
 		w = ~w;
 	} else {
-		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
-		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
+/* <<<<<<< Updated upstream */
+/* 		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel); */
+/* 		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h); */
+/* 		d = XftDrawCreate(drw->dpy, drw->drawable, */
+/* 		                  DefaultVisual(drw->dpy, drw->screen), */
+/* 		                  DefaultColormap(drw->dpy, drw->screen)); */
+/* ======= */
+		drw_fillrect(
+			drw,
+			x,
+			y,
+			w,
+			h,
+			invert ? drw->scheme[ColFg].pixel : drw->scheme[ColBg].pixel,
+			num_threads
+		);
 		d = XftDrawCreate(drw->dpy, drw->drawable,
 		                  DefaultVisual(drw->dpy, drw->screen),
 		                  DefaultColormap(drw->dpy, drw->screen));
+/* >>>>>>> Stashed changes */
 		x += lpad;
 		w -= lpad;
 	}
@@ -393,7 +456,7 @@ drw_fontset_getwidth(Drw *drw, const char *text)
 {
 	if (!drw || !drw->fonts || !text)
 		return 0;
-	return drw_text(drw, 0, 0, 0, 0, 0, text, 0);
+	return drw_text(drw, 0, 0, 0, 0, 0, text, 0, CPU_THREADS);
 }
 
 void

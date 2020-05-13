@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = drw.c dmenu.c stest.c util.c
+SRC = drw.c dmenu.c stest.c util.c stackblur.c stacktint.c
 OBJ = $(SRC:.c=.o)
 
 all: options dmenu stest
@@ -20,10 +20,10 @@ options:
 config.h:
 	cp config.def.h $@
 
-$(OBJ): arg.h config.h config.mk drw.h
+$(OBJ): arg.h config.h config.mk drw.h stackblur.h stacktint.h
 
-dmenu: dmenu.o drw.o util.o
-	$(CC) -o $@ dmenu.o drw.o util.o $(LDFLAGS)
+dmenu: dmenu.o drw.o util.o stackblur.o stacktint.o
+	$(CC) -pthread -o $@ dmenu.o drw.o util.o stackblur.o stacktint.o  $(LDFLAGS)
 
 stest: stest.o
 	$(CC) -o $@ stest.o $(LDFLAGS)

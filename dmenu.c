@@ -26,9 +26,6 @@
 #define LENGTH(X)             (sizeof X / sizeof X[0])
 #define TEXTW(X)              (drw_fontset_getwidth(drw, (X)) + lrpad)
 
-/* enums */
-enum { SchemeNorm, SchemeSel, SchemeOut, SchemeLast }; /* color schemes */
-
 struct item {
 	char *text;
 	struct item *left, *right;
@@ -137,7 +134,7 @@ drawitem(struct item *item, int x, int y, int w)
 	else
 		drw_setscheme(drw, scheme[SchemeNorm]);
 
-	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0);
+	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0, CPU_THREADS);
 }
 
 static void
@@ -148,21 +145,21 @@ drawmenu(void)
 	int x = 0, y = 0, fh = drw->fonts->h, w;
 
 	drw_setscheme(drw, scheme[SchemeNorm]);
-	drw_rect(drw, 0, 0, mw, mh, 1, 1);
+	drw_rect(drw, 0, 0, mw, mh, 1, 1, CPU_THREADS);
 
 	if (prompt && *prompt) {
 		drw_setscheme(drw, scheme[SchemeSel]);
-		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0);
+		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0, CPU_THREADS);
 	}
 	/* draw input field */
 	w = (lines > 0 || !matches) ? mw - x : inputw;
-	drw_setscheme(drw, scheme[SchemeNorm]);
-	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0);
+	drw_setscheme(drw, scheme[SchemeFirst]);
+	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0, CPU_THREADS);
 
 	curpos = TEXTW(text) - TEXTW(&text[cursor]);
 	if ((curpos += lrpad / 2 - 1) < w) {
 		drw_setscheme(drw, scheme[SchemeNorm]);
-		drw_rect(drw, x + curpos, 2 + (bh-fh)/2, 2, fh - 4, 1, 0);
+		drw_rect(drw, x + curpos, 2 + (bh-fh)/2, 2, fh - 4, 1, 0, CPU_THREADS);
 	}
 
 	if (lines > 0) {
@@ -175,7 +172,7 @@ drawmenu(void)
 		w = TEXTW("<");
 		if (curr->left) {
 			drw_setscheme(drw, scheme[SchemeNorm]);
-			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0);
+			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0, CPU_THREADS);
 		}
 		x += w;
 		for (item = curr; item != next; item = item->right)
@@ -183,7 +180,7 @@ drawmenu(void)
 		if (next) {
 			w = TEXTW(">");
 			drw_setscheme(drw, scheme[SchemeNorm]);
-			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0);
+			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0, CPU_THREADS);
 		}
 	}
 	drw_map(drw, win, 0, 0, mw, mh);
@@ -778,6 +775,9 @@ setup(void)
 	xic = XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
 	                XNClientWindow, win, XNFocusWindow, win, NULL);
 
+	//take the screenshot and blur it before displaying the menu window
+	drw_takesblurcreenshot(drw, x, y, mw, mh, blurlevel, CPU_THREADS);
+
 	XMapRaised(dpy, win);
 	XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
 	if (embed) {
@@ -825,11 +825,12 @@ main(int argc, char *argv[])
 		/* selected background color */
 			colors[SchemeSel][ColBg] = "#a54242";
 		/* selected foreground color */
-			colors[SchemeSel][ColFg] = "#282a2e";
+			colors[SchemeSel][ColFg] = "#c5c8c6";
 		} else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
 			// NOTE: This is the default now
-			fstrncmp = strncasecmp;
-			fstrstr = cistrstr;
+			colors[SchemeSel][ColFg] = "#c5c8c6";
+			/* fstrncmp = strncasecmp; */
+			/* fstrstr = cistrstr; */
 		} else if (i + 1 == argc)
 			usage();
 		/* these options take one argument */
@@ -851,6 +852,10 @@ main(int argc, char *argv[])
 			lineheight = atoi(argv[++i]);
 			lineheight = MAX(lineheight,8); /* reasonable default in case of value too small/negative */
 		}
+		else if (!strcmp(argv[i], "-fb"))  /* normal background color */
+			colors[SchemeFirst][ColBg] = argv[++i];
+		else if (!strcmp(argv[i], "-ff"))  /* normal foreground color */
+			colors[SchemeFirst][ColFg] = argv[++i];
 		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
 			colors[SchemeNorm][ColBg] = argv[++i];
 		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
