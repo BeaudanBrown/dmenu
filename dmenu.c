@@ -55,6 +55,10 @@ static XIC xic;
 static Drw *drw;
 static Clr *scheme[SchemeLast];
 
+static char *histfile;
+static char *histbuf, *histptr;
+static size_t histsz;
+
 #include "config.h"
 
 static void
@@ -385,6 +389,106 @@ nextrune(int inc)
 }
 
 static void
+loadhistory(void)
+{
+	FILE *fp = NULL;
+	size_t sz;
+
+	if (!histfile)
+		return;
+	if (!(fp = fopen(histfile, "r")))
+		return;
+	fseek(fp, 0, SEEK_END);
+	sz = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	if (sz) {
+		histsz = sz + 1 + BUFSIZ;
+		if (!(histbuf = malloc(histsz))) {
+			fprintf(stderr, "warning: cannot malloc %lu "\
+				"bytes", histsz);
+		} else {
+			histptr = histbuf + fread(histbuf, 1, sz, fp);
+			if (histptr <= histbuf) { /* fread error */
+				free(histbuf);
+				histbuf = NULL;
+				return;
+			}
+			if (histptr[-1] != '\n')
+				*histptr++ = '\n';
+			histptr[BUFSIZ - 1] = '\0';
+			*histptr = '\0';
+			histsz = histptr - histbuf + BUFSIZ;
+		}
+	}
+	fclose(fp);
+}
+
+static void
+navhistory(int dir)
+{
+	char *p;
+	size_t len = 0, textlen;
+
+	if (!histbuf)
+		return;
+	if (dir > 0) {
+		if (histptr == histbuf + histsz - BUFSIZ)
+			return;
+		while (*histptr && *histptr++ != '\n');
+		for (p = histptr; *p && *p++ != '\n'; len++);
+	} else {
+		if (histptr == histbuf)
+			return;
+		if (histptr == histbuf + histsz - BUFSIZ) {
+			textlen = strlen(text);
+			textlen = MIN(textlen, BUFSIZ - 1);
+			strncpy(histptr, text, textlen);
+			histptr[textlen] = '\0';
+		}
+		for (histptr--; histptr != histbuf && histptr[-1] != '\n';
+		     histptr--, len++);
+	}
+	len = MIN(len, BUFSIZ - 1);
+	strncpy(text, histptr, len);
+	text[len] = '\0';
+	cursor = len;
+	match();
+}
+
+static void
+savehistory(char *str)
+{
+	unsigned int n, len = 0;
+	size_t slen;
+	char *p;
+	FILE *fp;
+
+	if (!histfile || !maxhist)
+		return;
+	if (!(slen = strlen(str)))
+		return;
+	if (histbuf && maxhist > 1) {
+		p = histbuf + histsz - BUFSIZ - 1; /* skip the last newline */
+		if (histnodup) {
+			for (; p != histbuf && p[-1] != '\n'; p--, len++);
+			n++;
+			if (slen == len && !strncmp(p, str, len)) {
+				return;
+			}
+		}
+		for (; p != histbuf; p--, len++)
+			if (p[-1] == '\n' && ++n + 1 > maxhist)
+				break;
+		fp = fopen(histfile, "w");
+		fwrite(p, 1, len + 1, fp);	/* plus the last newline */
+	} else {
+		fp = fopen(histfile, "w");
+	}
+	fwrite(str, 1, strlen(str), fp);
+	fclose(fp);
+}
+
+static void
 movewordedge(int dir)
 {
 	if (dir < 0) { /* move cursor to the start of the word*/
@@ -422,28 +526,22 @@ keypress(XKeyEvent *ev)
 	if (ev->state & ControlMask) {
 		switch(ksym) {
 		case XK_a: ksym = XK_Home;      break;
-		case XK_b: ksym = XK_Left;      break;
 		case XK_c: ksym = XK_Escape;    break;
-		case XK_d: ksym = XK_Delete;    break;
 		case XK_e: ksym = XK_End;       break;
-		case XK_f: ksym = XK_Right;     break;
 		case XK_g: ksym = XK_Escape;    break;
-		case XK_h: ksym = XK_BackSpace; break;
+		case XK_h: ksym = XK_Left;      break;
+		case XK_l: ksym = XK_Right;      break;
 		case XK_i: ksym = XK_Tab;       break;
-		case XK_j: /* fallthrough */
+		case XK_d: ksym = XK_Next;  break;
+		case XK_u: ksym = XK_Prior; break;
 		case XK_J: /* fallthrough */
 		case XK_m: /* fallthrough */
 		case XK_M: ksym = XK_Return; ev->state &= ~ControlMask; break;
-		case XK_n: ksym = XK_Down;      break;
-		case XK_p: ksym = XK_Up;        break;
+		case XK_j: ksym = XK_Down;      break;
+		case XK_k: ksym = XK_Up;        break;
+		case XK_p: navhistory(-1); buf[0]=0; break;
+		case XK_n: navhistory(1); buf[0]=0; break;
 
-		case XK_k: /* delete right */
-			text[cursor] = '\0';
-			match();
-			break;
-		case XK_u: /* delete left */
-			insert(NULL, 0 - cursor);
-			break;
 		case XK_w: /* delete word */
 			while (cursor > 0 && strchr(worddelimiters, text[nextrune(-1)]))
 				insert(NULL, nextrune(-1) - cursor);
@@ -562,6 +660,8 @@ insert:
 	case XK_KP_Enter:
 		puts((sel && !(ev->state & ShiftMask)) ? sel->text : text);
 		if (!(ev->state & ControlMask)) {
+			savehistory((sel && !(ev->state & ShiftMask))
+				    ? sel->text : text);
 			cleanup();
 			exit(0);
 		}
@@ -797,7 +897,7 @@ static void
 usage(void)
 {
 	fputs("usage: dmenu [-bfiv] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
-	      "             [-h height] [-x xoffset] [-y yoffset] [-w width]\n"
+	      "             [-h height] [-H histfile] [-x xoffset] [-y yoffset] [-w width]\n"
 	      "             [-nb color] [-nf color] [-sb color] [-sf color] [-w windowid]\n", stderr);
 	exit(1);
 }
@@ -808,6 +908,11 @@ main(int argc, char *argv[])
 	XWindowAttributes wa;
 	int i, fast = 0;
 
+    /* default history file */
+	char *homedir = getenv("HOME");
+	if (homedir != NULL) {
+		histfile = strcat(homedir, "/.config/dmenuhist");
+	}
 	for (i = 1; i < argc; i++)
 		/* these options take no arguments */
 		if (!strcmp(argv[i], "-v")) {      /* prints version information */
@@ -834,6 +939,8 @@ main(int argc, char *argv[])
 		} else if (i + 1 == argc)
 			usage();
 		/* these options take one argument */
+		else if (!strcmp(argv[i], "-H"))
+			histfile = argv[++i];
 		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
 			lines = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "-x"))   /* window x offset */
@@ -884,6 +991,7 @@ main(int argc, char *argv[])
 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
 		die("no fonts could be loaded.");
 	lrpad = drw->fonts->h;
+	loadhistory();
 
 #ifdef __OpenBSD__
 	if (pledge("stdio rpath", NULL) == -1)

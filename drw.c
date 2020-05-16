@@ -277,7 +277,6 @@ drw_rect(Drw *drw, int x, int y, unsigned int w, unsigned int h, int filled, int
 	unsigned long pix;
 	if (!drw || !drw->scheme)
 		return;
-	/* XSetForeground(drw->dpy, drw->gc, invert ? drw->scheme[ColBg].pixel : drw->scheme[ColFg].pixel); */
 	pix = invert ? drw->scheme[ColBg].pixel : drw->scheme[ColFg].pixel;
 	if (filled) {
 		drw_fillrect(drw, x, y, w + 1, h + 1, pix, num_threads);
@@ -319,13 +318,6 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
 	if (!render) {
 		w = ~w;
 	} else {
-/* <<<<<<< Updated upstream */
-/* 		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel); */
-/* 		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h); */
-/* 		d = XftDrawCreate(drw->dpy, drw->drawable, */
-/* 		                  DefaultVisual(drw->dpy, drw->screen), */
-/* 		                  DefaultColormap(drw->dpy, drw->screen)); */
-/* ======= */
 		drw_fillrect(
 			drw,
 			x,
@@ -338,7 +330,6 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
 		d = XftDrawCreate(drw->dpy, drw->drawable,
 		                  DefaultVisual(drw->dpy, drw->screen),
 		                  DefaultColormap(drw->dpy, drw->screen));
-/* >>>>>>> Stashed changes */
 		x += lpad;
 		w -= lpad;
 	}
